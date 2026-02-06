@@ -1,0 +1,4 @@
+- k3d cluster with traefik disabled
+- nginx ingress controller installed
+- host-based routing via *.localtest.me
+- resolved ingress class conflict (traefik vs nginx)
