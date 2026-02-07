@@ -1,10 +1,11 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from .store_manager import create_store, delete_store
+from .routes_store import router as store_router
 
 
 app = FastAPI(title="Store Provisioning API")
-
+app.include_router(store_router)
 
 class StoreCreateRequest(BaseModel):
     name: str   # e.g. "store-demo-2"
