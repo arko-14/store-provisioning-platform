@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: platform-store-values
+data:
+  store-values.yaml: |
+{{ .Files.Get "files/store-values.yaml" | indent 4 }}

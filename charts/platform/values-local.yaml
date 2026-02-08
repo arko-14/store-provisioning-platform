@@ -1,0 +1,11 @@
+api:
+  image: platform-api
+  tag: v4
+  pullPolicy: IfNotPresent
+
+
+
+
+ingress:
+  host: platform.localtest.me
+  className: nginx

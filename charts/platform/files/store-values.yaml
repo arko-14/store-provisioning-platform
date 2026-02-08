@@ -1,0 +1,31 @@
+wordpressUsername: admin
+wordpressPassword: "Admin@12345"
+wordpressEmail: admin@example.com
+wordpressFirstName: Demo
+wordpressLastName: Admin
+wordpressBlogName: "Store Demo"
+
+service:
+  type: ClusterIP
+
+ingress:
+  enabled: true
+  ingressClassName: nginx
+  hostname: store-demo.localtest.me
+  path: /
+  pathType: Prefix
+
+mariadb:
+  enabled: true
+  auth:
+    rootPassword: "Root@12345"
+    password: "DB@12345"
+    database: bitnami_wordpress
+  primary:
+    persistence:
+      enabled: true
+      size: 2Gi
+
+persistence:
+  enabled: true
+  size: 2Gi

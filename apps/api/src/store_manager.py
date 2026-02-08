@@ -1,39 +1,45 @@
 import subprocess
+import os
 from pathlib import Path
 
-BITNAMI_REPO = "bitnami/wordpress"
-
-
-REPO_ROOT = Path(__file__).resolve().parents[3]
-VALUES_PATH = REPO_ROOT / "infra" / "local" / "values-store-demo.yaml"
+BITNAMI_REPO = "oci://registry-1.docker.io/bitnamicharts/wordpress"
 
 
 def run(cmd: list[str]):
-    """Run command and raise readable error on failure."""
     result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     if result.returncode != 0:
         raise RuntimeError(result.stderr.strip() or result.stdout.strip())
     return result.stdout.strip()
 
+def _values_path() -> str:
+    # Prefer env var (works in Kubernetes)
+    p = os.environ.get("STORE_VALUES_PATH")
+    if p:
+        return p
+
+    # Local fallback for your laptop runs (repo-relative)
+    local = Path("infra/local/values-store-demo.yaml")
+    if local.exists():
+        return str(local.resolve())
+
+    raise RuntimeError("No values file found. Set STORE_VALUES_PATH or ensure infra/local/values-store-demo.yaml exists.")
 
 def create_store(store_name: str):
     namespace = store_name
 
-    
+    # Create namespace (idempotent)
     try:
         run(["kubectl", "create", "ns", namespace])
     except RuntimeError as e:
         if "AlreadyExists" not in str(e):
             raise
 
-    if not VALUES_PATH.exists():
-        raise RuntimeError(f"Values file not found at: {VALUES_PATH}")
+    values = _values_path()
 
-    
     run([
         "helm", "install", store_name, BITNAMI_REPO,
         "-n", namespace,
-        "-f", str(VALUES_PATH),
+        "-f", values,
         "--set", f"ingress.hostname={store_name}.localtest.me",
         "--set", "ingress.ingressClassName=nginx",
         "--set", "service.type=ClusterIP",
@@ -41,20 +47,11 @@ def create_store(store_name: str):
 
     return "helm install triggered"
 
-
 def delete_store(store_name: str):
     namespace = store_name
 
-    
-    try:
-        run(["helm", "uninstall", store_name, "-n", namespace])
-    except RuntimeError:
-        pass
-
-   
-    try:
-        run(["kubectl", "delete", "ns", namespace])
-    except RuntimeError:
-        pass
+    # best-effort uninstall + namespace delete
+    subprocess.run(["helm", "uninstall", store_name, "-n", namespace], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    subprocess.run(["kubectl", "delete", "ns", namespace], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 
     return "delete triggered"
