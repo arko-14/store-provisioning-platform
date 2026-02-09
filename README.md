@@ -195,6 +195,11 @@ This project uses **`*.localtest.me`** which automatically resolves to `127.0.0.
 GET /api/stores
 ```
 
+**Screenshot**
+![Postman List Stores](docs/screenshots/postman/list%20stores.png)
+
+
+
 #### 2. Create a New Store
 ```bash
 POST /api/stores
@@ -218,10 +223,6 @@ POST /api/stores/postman-store-1/refresh
 ```bash
 DELETE /api/stores/postman-store-1
 ```
-
-**Screenshot:**
-
-![Postman List Stores](docs/screenshots/postman/list%20stores.png)
 
 ---
 
