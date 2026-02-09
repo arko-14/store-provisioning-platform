@@ -5,7 +5,7 @@ from .routes_store import router as store_router
 
 
 app = FastAPI(title="Store Provisioning API")
-app.include_router(store_router)
+app.include_router(store_router, prefix="/api")
 
 class StoreCreateRequest(BaseModel):
     name: str   # e.g. "store-demo-2"

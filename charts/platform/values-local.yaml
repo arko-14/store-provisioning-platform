@@ -3,9 +3,13 @@ api:
   tag: v4
   pullPolicy: IfNotPresent
 
-
+dashboard:
+  image: platform-dashboard
+  tag: v8
+  pullPolicy: IfNotPresent
 
 
 ingress:
-  host: platform.localtest.me
+  dashboardHost: platform-dashboard.localtest.me
+  apiHost: platform.localtest.me
   className: nginx
