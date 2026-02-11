@@ -1,29 +1,17 @@
 # Node
-node_modules/
-dist/
-build/
+**/node_modules/
+**/dist/
 
 # Python
 __pycache__/
 *.pyc
 .venv/
-venv/
 
-# Env files
-.env
-.env.local
-
-# Kubernetes local data
+# Local data
 data/
 *.db
 
 # OS
 .DS_Store
-Thumbs.db
 
-# Logs
-*.log
-
-# IDE
-.vscode/
-.idea/
+apps/api/data/stores.db

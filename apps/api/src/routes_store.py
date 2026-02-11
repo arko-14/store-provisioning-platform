@@ -1,10 +1,12 @@
 import time
-import subprocess
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from .store_manager import create_store, delete_store
 from .db import conn
+
+from kubernetes import client, config
+from kubernetes.config.config_exception import ConfigException
 
 router = APIRouter()
 
@@ -26,6 +28,36 @@ def _row_to_dict(r):
     }
 
 
+def is_wordpress_ready(namespace: str) -> bool:
+    """
+    Returns True if a WordPress pod in the namespace is Ready=True.
+
+    - In Kubernetes: uses in-cluster config
+    - Locally: falls back to kubeconfig (~/.kube/config)
+    """
+    try:
+        config.load_incluster_config()
+    except ConfigException:
+        config.load_kube_config()
+
+    v1 = client.CoreV1Api()
+
+    pods = v1.list_namespaced_pod(
+        namespace=namespace,
+        label_selector="app.kubernetes.io/name=wordpress",
+    ).items
+
+    if not pods:
+        return False
+
+    pod = pods[0]
+    for cond in pod.status.conditions or []:
+        if cond.type == "Ready" and cond.status == "True":
+            return True
+
+    return False
+
+
 # --------- Routes ---------
 @router.post("/stores")
 def create_store_api(req: StoreCreateRequest):
@@ -45,10 +77,12 @@ def create_store_api(req: StoreCreateRequest):
     if existing:
         return _row_to_dict(existing)
 
+    created_at = int(time.time())
+
     # Insert row as Provisioning
     c.execute(
         "INSERT INTO stores(id,status,engine,url,created_at,last_error) VALUES (?,?,?,?,?,?)",
-        (store_name, "Provisioning", "woocommerce", url, int(time.time()), None),
+        (store_name, "Provisioning", "woocommerce", url, created_at, None),
     )
     c.commit()
 
@@ -60,7 +94,7 @@ def create_store_api(req: StoreCreateRequest):
             "status": "Provisioning",
             "engine": "woocommerce",
             "url": url,
-            "created_at": int(time.time()),
+            "created_at": created_at,
             "last_error": None,
         }
     except Exception as e:
@@ -100,36 +134,30 @@ def refresh_status(store_name: str):
     - If wordpress pod ready => Ready
     - Else => Provisioning
     """
-    # Check pod readiness in that namespace
-    cmd = [
-        "kubectl",
-        "-n",
-        store_name,
-        "get",
-        "pods",
-        "-l",
-        "app.kubernetes.io/name=wordpress",
-        "-o",
-        "jsonpath={.items[0].status.containerStatuses[0].ready}",
-    ]
-
-    try:
-        out = subprocess.check_output(cmd, text=True).strip()
-    except Exception:
-        out = ""
-
-    new_status = "Ready" if out == "true" else "Provisioning"
-
     c = conn()
+
     # Only update if store exists
     exists = c.execute("SELECT 1 FROM stores WHERE id=?", (store_name,)).fetchone()
     if not exists:
         raise HTTPException(status_code=404, detail="Store not found in registry")
 
-    c.execute("UPDATE stores SET status=? WHERE id=?", (new_status, store_name))
-    c.commit()
+    try:
+        ready = is_wordpress_ready(store_name)
+        new_status = "Ready" if ready else "Provisioning"
 
-    return {"id": store_name, "status": new_status}
+        # Clear last_error on successful refresh checks
+        c.execute(
+            "UPDATE stores SET status=?, last_error=? WHERE id=?",
+            (new_status, None, store_name),
+        )
+        c.commit()
+
+        return {"id": store_name, "status": new_status}
+    except Exception as e:
+        # If refresh check itself fails, keep status as Provisioning but record why
+        c.execute("UPDATE stores SET last_error=? WHERE id=?", (str(e), store_name))
+        c.commit()
+        return {"id": store_name, "status": "Provisioning", "warning": str(e)}
 
 
 @router.delete("/stores/{store_name}")
