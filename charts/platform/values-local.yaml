@@ -1,6 +1,6 @@
 api:
   image: platform-api
-  tag: v7
+  tag: v11
   pullPolicy: IfNotPresent
 
 dashboard:

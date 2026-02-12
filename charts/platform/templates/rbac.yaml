@@ -26,6 +26,8 @@ rules:
       - configmaps
       - events
       - serviceaccounts
+      - resourcequotas
+      - limitranges
     verbs: ["get", "list", "watch", "create", "delete", "patch", "update"]
 
   # apps resources
