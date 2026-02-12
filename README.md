@@ -15,6 +15,9 @@ A **Kubernetes-native platform** that provisions isolated ecommerce stores (WooC
 - 🎛️ **Helm-based** – Same deployment works local → VPS using values files
 - 🗑️ **Safe deletion** – Complete cleanup of namespaces, releases, and resources
 - 📊 **Real-time status** – Monitor store health and readiness
+- 🛡️ **Multi-tenant guardrails** – ResourceQuota, LimitRange, and NetworkPolicy per store
+- 🔒 **Network isolation** – Deny-by-default NetworkPolicy with controlled egress
+- 🎬 **Demo scripts** – PowerShell scripts for automated store + product creation
 
 ---
 
@@ -81,11 +84,16 @@ A **Kubernetes-native platform** that provisions isolated ecommerce stores (WooC
 ├── docs/
 │   └── screenshots/
 │       └── postman/            # API testing screenshots
-├── scripts/                    # Automation scripts
+├── scripts/                    # PowerShell automation scripts
+│   ├── demo-workflow.ps1       # Full demo with auto product creation
+│   ├── create-store.ps1        # Create store and open admin
+│   ├── dev-local.ps1           # Setup local environment
+│   └── teardown.ps1            # Cleanup everything
 ├── demo/                       # Demo configurations
 ├── data/                       # Data files
 ├── README.md
-└── SYSTEM_DESIGN.md
+├── SYSTEM_DESIGN.md            # Detailed architecture documentation
+└── COMMANDS.md                 # Command reference guide
 ```
 
 | Folder | Purpose |
@@ -95,6 +103,7 @@ A **Kubernetes-native platform** that provisions isolated ecommerce stores (WooC
 | **charts/platform/** | Helm chart deploying API + Dashboard + RBAC + Ingresses |
 | **infra/local/** | k3d cluster setup scripts and notes |
 | **docs/screenshots/** | Postman/UI demo screenshots |
+| **scripts/** | PowerShell scripts for demo, setup, teardown |
 | **scripts/** | Deployment and automation scripts |
 
 ---
@@ -259,6 +268,72 @@ Access: **http://store-demo.localtest.me**
 
 ---
 
+## 🎬 Demo Scripts (PowerShell)
+
+### Full Auto Demo
+Creates a store, installs WooCommerce, adds a product, and opens browser:
+```powershell
+.\scripts\demo-workflow.ps1 -StoreName "my-store" -FullAuto
+```
+
+### Manual Demo
+Creates a store and opens admin pages for manual setup:
+```powershell
+.\scripts\demo-workflow.ps1 -StoreName "my-store"
+```
+
+### Create Store Only
+```powershell
+.\scripts\create-store.ps1 -Name "test-shop" -OpenAdmin
+```
+
+### Full Environment Setup
+```powershell
+.\scripts\dev-local.ps1
+```
+
+### Teardown Everything
+```powershell
+.\scripts\teardown.ps1
+```
+
+> 📖 See [COMMANDS.md](COMMANDS.md) for complete command reference.
+
+---
+
+## 🛡️ Multi-Tenant Guardrails
+
+Each store namespace automatically gets:
+
+### ResourceQuota
+```yaml
+requests.cpu: "4"
+requests.memory: 4Gi
+limits.cpu: "8"
+limits.memory: 8Gi
+pods: "20"
+persistentvolumeclaims: "10"
+```
+
+### LimitRange (default container limits)
+```yaml
+default:
+  cpu: "1"
+  memory: "1Gi"
+defaultRequest:
+  cpu: "100m"
+  memory: "128Mi"
+```
+
+### NetworkPolicy (deny-by-default)
+- ✅ Allows traffic within same namespace
+- ✅ Allows ingress from nginx-ingress namespace
+- ✅ Allows DNS (UDP 53) to kube-system
+- ✅ Allows HTTPS (443) egress for plugins/updates
+- ❌ Denies all other cross-namespace traffic
+
+---
+
 ## 🗑️ Deleting a Store
 
 Deleting a store removes:
@@ -336,7 +411,9 @@ secrets:
 
 ## 🛠️ Roadmap / Future Improvements
 
-- [ ] **ResourceQuota + LimitRange** per store namespace
+- [x] **ResourceQuota + LimitRange** per store namespace
+- [x] **NetworkPolicy** (deny-by-default) per store namespace
+- [x] **Demo scripts** (PowerShell) for automated workflows
 - [ ] **Provisioning timeouts** and clearer failure reasons
 - [ ] **Audit log** of store creation/deletion actions
 - [ ] **Multi-user authentication** with per-user quotas
@@ -388,15 +465,6 @@ kubectl -n kube-system get pods | grep local-path
 
 ---
 
-## 📖 Additional Resources
-
-- [Kubernetes Documentation](https://kubernetes.io/docs/)
-- [Helm Documentation](https://helm.sh/docs/)
-- [Bitnami WordPress Chart](https://github.com/bitnami/charts/tree/main/bitnami/wordpress)
-- [k3d Documentation](https://k3d.io/)
-- [WooCommerce Documentation](https://woocommerce.com/documentation/)
-
----
 
 ## 📊 Project Status
 
@@ -419,17 +487,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
-## 🤝 Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
-
----
 
 ## 👤 Author
 
@@ -438,6 +495,4 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ---
 
-## ⭐ Show your support
 
-Give a ⭐️ if this project helped you!
