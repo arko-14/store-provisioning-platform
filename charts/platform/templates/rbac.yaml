@@ -52,7 +52,7 @@ rules:
       - poddisruptionbudgets
     verbs: ["get", "list", "watch", "create", "delete", "patch", "update"]
 
-  # VERY likely needed by charts (safe to include)
+  
   - apiGroups: ["rbac.authorization.k8s.io"]
     resources:
       - roles
