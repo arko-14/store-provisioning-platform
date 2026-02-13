@@ -458,3 +458,114 @@ mariadb:
 persistence:
   size: 2Gi
 ```
+
+---
+
+## System Design & Tradeoffs
+
+### Architecture Choices
+
+| Decision | Choice | Why | Tradeoff |
+|----------|--------|-----|----------|
+| **Orchestration** | Synchronous Helm via subprocess | Simple, atomic (`--atomic`), no extra infrastructure | Blocks API during provisioning (~5-10 min); not horizontally scalable |
+| **Store Isolation** | Namespace-per-store | Clean boundaries, easy cleanup (`kubectl delete ns`), native RBAC scoping | Namespace count limits (~10k), slight overhead per namespace |
+| **State Storage** | SQLite in-pod | Zero dependencies, fast prototyping | Not persistent across pod restarts, not HA; production needs PostgreSQL |
+| **Ingress** | Wildcard `*.localtest.me` | No DNS config needed for local dev | Production requires real DNS + cert-manager |
+| **Container Runtime** | Direct `kubectl`/`helm` exec | Avoids Kubernetes client library complexity | Subprocess overhead, error parsing is string-based |
+
+### Idempotency & Failure Handling
+
+**Create Store:**
+```
+1. Check DB → if exists, return existing record (no duplicate creates)
+2. Insert DB row with status="Provisioning"
+3. kubectl create ns → ignores AlreadyExists error
+4. kubectl apply guardrails → idempotent (apply, not create)
+5. helm install --atomic → auto-rollback on failure
+6. On exception: UPDATE status="Failed", store error message
+```
+
+**Key Behaviors:**
+- ✅ **Safe retries:** Creating same store twice returns existing record
+- ✅ **Atomic Helm:** `--atomic` flag rolls back on any failure
+- ✅ **Error capture:** Failures recorded in `last_error` column
+- ⚠️ **No recovery:** If API pod restarts mid-provision, store stays "Provisioning" forever (manual cleanup needed)
+
+**Delete Store:**
+```
+1. helm uninstall (best-effort, continues on error)
+2. kubectl delete ns (cascades all resources)
+3. DELETE from DB
+```
+
+**Key Behaviors:**
+- ✅ **Cascading cleanup:** Namespace deletion removes all child resources
+- ✅ **Best-effort:** Partial failures don't block DB cleanup
+- ⚠️ **No finalizers:** If namespace deletion hangs, requires manual intervention
+
+### Cleanup Approach
+
+| Resource | Cleanup Method | Notes |
+|----------|---------------|-------|
+| Helm release | `helm uninstall` | Removes managed resources |
+| Pods, Services, Ingress | Namespace deletion | Cascaded automatically |
+| PVCs | Namespace deletion | Data is deleted (no backup) |
+| ResourceQuota, LimitRange | Namespace deletion | Cascaded |
+| NetworkPolicy | Namespace deletion | Cascaded |
+| DB record | `DELETE FROM stores` | After infra cleanup |
+
+### Production Changes
+
+| Component | Local (k3d) | Production | How to Change |
+|-----------|-------------|------------|---------------|
+| **DNS** | `*.localtest.me` (auto 127.0.0.1) | Real domain + DNS records | Helm values: `ingress.dashboardHost`, `ingress.apiHost` |
+| **TLS** | None (HTTP) | Let's Encrypt via cert-manager | Add `cert-manager.io/cluster-issuer` annotation |
+| **Ingress** | nginx-ingress | nginx / traefik / cloud LB | Helm values: `ingress.className` |
+| **Storage** | local-path (ephemeral) | Longhorn / OpenEBS / cloud PV | Helm values: `storageClass` |
+| **Secrets** | Plain ConfigMap | external-secrets / sealed-secrets | Replace `api-secret.yaml` template |
+| **Database** | SQLite `/tmp/stores.db` | PostgreSQL with PVC | Env var `DB_PATH`, update `db.py` |
+| **Registry** | k3d image import | Container registry (ECR/GCR/Docker Hub) | Helm values: `api.image`, `dashboard.image` |
+| **RBAC** | ClusterRole (broad) | Namespace-scoped Roles | Refactor `rbac.yaml` |
+
+### Production Checklist
+
+```yaml
+# values-prod.yaml changes
+ingress:
+  dashboardHost: dashboard.mycompany.com
+  apiHost: api.mycompany.com
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+
+api:
+  image: registry.mycompany.com/platform-api
+  tag: v1.0.0
+
+dashboard:
+  image: registry.mycompany.com/platform-dashboard
+  tag: v1.0.0
+
+storage:
+  class: longhorn  # or gp3, do-block-storage, etc.
+
+# Additional production requirements:
+# 1. Set up cert-manager with ClusterIssuer
+# 2. Configure external-secrets for WordPress passwords
+# 3. Deploy PostgreSQL for API state (or managed RDS)
+# 4. Set up monitoring (Prometheus + Grafana)
+# 5. Configure backup for PVCs (Velero)
+# 6. Set appropriate resource requests/limits
+```
+
+### Known Limitations
+
+| Limitation | Impact | Mitigation |
+|------------|--------|------------|
+| Synchronous provisioning | API blocks 5-10 min per store | Future: async job queue (Celery/Redis) |
+| SQLite state | Lost on pod restart | Use PostgreSQL with PVC |
+| No horizontal scaling | Single API instance | Future: distributed locking for Helm |
+| No backup/restore | Data loss on PVC delete | Integrate Velero for PV snapshots |
+| NetworkPolicy enforcement | Requires CNI support (Calico/Cilium) | k3d/Flannel doesn't enforce |
+| Provisioning timeout | Helm can hang indefinitely | `--timeout 10m` flag mitigates |
